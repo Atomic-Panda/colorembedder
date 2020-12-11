@@ -19,7 +19,7 @@ using namespace std;
 
 BOBHash * hash1, * hash2;
 
-template<uint32_t bucket_num, uint32_t COLOR_NUM = 4, bool verbose = 0>
+template<int32_t bucket_num, int32_t COLOR_NUM = 4, bool verbose = 1>
 class ColoringClassifier
 {
     uint8_t buckets[bucket_num];

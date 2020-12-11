@@ -1,6 +1,8 @@
 cmake_minimum_required (VERSION 3.2)
 project(ColoringClassifer)
 
+
+
 if(CMAKE_COMPILER_IS_GNUCXX)
     message(STATUS "GCC detected, adding compile flags")
 
@@ -14,6 +16,9 @@ endif(CMAKE_COMPILER_IS_GNUCXX)
 ADD_DEFINITIONS(-DPROJECT_ROOT="${CMAKE_SOURCE_DIR}")
 
 SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin")
+SET(CMAKE_C_COMPILER "F:/mingw64/bin/gcc.exe") # 填写绝对路径
+SET(CMAKE_CXX_COMPILER "F:/mingw64/bin/g++.exe") # 填写绝对路径
+SET(CMAKE_MAKE_PROGRAM "F:/mingw64/bin/make.exe")
 
 SET(SOURCE_FILES 
         src/coloring_classifier.h 

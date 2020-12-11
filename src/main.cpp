@@ -30,7 +30,7 @@ void test_two_set()
             }
         }
         data[i].first = item;
-        data[i].second = i % 2;
+        data[i].second = (i % 2 == 0);
     }
 
     auto cc = new ShiftingColoringClassifier<int(MAXN * 1.11), 4, 2>();
