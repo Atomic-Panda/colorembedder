@@ -22,7 +22,8 @@ BOBHash * hash1, * hash2;
 template<int32_t bucket_num, int32_t COLOR_NUM = 4, bool verbose = 1>
 class ColoringClassifier
 {
-    // buckets是unit8？，如果是4个颜色的话，2 bit就行了
+    // buckets是unit8，如果是4个颜色的话，2 bit就行了
+    // Transferring v_bucket and bucket in the 2 function sync, and we actually don't use bucket in the algorithm
     uint8_t buckets[bucket_num];
 private:
     template<uint32_t hash_range>
