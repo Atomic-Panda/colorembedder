@@ -22,22 +22,25 @@ BOBHash * hash1, * hash2;
 template<int32_t bucket_num, int32_t COLOR_NUM = 4, bool verbose = 1>
 class ColoringClassifier
 {
+    // buckets是unit8？，如果是4个颜色的话，2 bit就行了
     uint8_t buckets[bucket_num];
 private:
     template<uint32_t hash_range>
     struct Edge
     {
+        // 被hash的可以是str，也可以是int64
         uint64_t e;
         uint32_t hash_val_a;
         uint32_t hash_val_b;
         bool available;
         char e_str[MAX_LEN];
 
+        // 设置Hash的值，val_a and val_b
         void set_hash_val(uint64_t _e) {
             e = _e;
+            // 这边的4是指size，可是为什么是4呢？可能需要研究一下BOB_Hash
             hash_val_a = hash1->run(&e, 4) % hash_range;
             hash_val_b = hash2->run(&e, 4) % hash_range;
-
             int i = 1;
             while (hash_val_a == hash_val_b) {
                 hash_val_b = (hash1->run(&e, 4) +
@@ -56,6 +59,7 @@ private:
             }
         }
 
+        // 5个构造函数，前3个直接构造，后面2个复制构造
         Edge() : available(true) {}
         Edge(uint64_t _e) : available(true) {
             set_hash_val(_e);
@@ -80,6 +84,7 @@ private:
             hash_val_b = edge.hash_val_b;
         }
 
+        // 什么意思？
         uint32_t get_other_val(uint32_t i) const {
             if (i == hash_val_a) {
                 return hash_val_b;
@@ -104,6 +109,7 @@ protected:
 private:
     struct VerboseBuckets;
 
+    // node struct
     struct VerboseGroup
     {
         int color;
@@ -119,6 +125,7 @@ private:
                          back_pointer(NULL), deleted_neighbour_num(0), remained_neighbour_num(0) {}
     };
 
+    // 和buckets一一对应，verbose的冗长版本；node struct, link to pos, neg edges, root_bucket, next_bucket and last_son
     struct VerboseBuckets
     {
         int color;
@@ -130,7 +137,9 @@ private:
         VerboseGroup group;
 
         VerboseBuckets(): color(-1) {
+            // root_bucket是this
             root_bucket = this;
+            // next_bucket设置为null
             next_bucket = NULL;
             last_son = this; // only useful when root
             pos_edges.clear();
@@ -139,6 +148,7 @@ private:
             group.back_pointer = this;
         }
 
+        // GetRoot？并查集？
         VerboseBuckets * get_root_bucket()
         {
             VerboseBuckets * ret = root_bucket;
@@ -161,6 +171,7 @@ private:
             new_root->last_son = old_root->last_son;
         }
     } v_buckets[bucket_num];
+    // v_buckets就是node节点，这里有bucket_num个
 
     void synchronize_all()
     {
@@ -617,22 +628,21 @@ public:
         }
     };
 
-    void random_set_hash()
-    {
+    void random_set_hash(){
         srand(time(0));
         if (hash1) delete hash1;
         if (hash2) delete hash2;
         hash1 = new BOBHash(rand());
         hash2 = new BOBHash(rand());
     }
-
+    // INT to construct the CC
     void set_pos_edge(uint64_t * items, int num) {
         pos_edges.resize(num);
         for (int i = 0; i < num; ++i) {
             pos_edges[i] = new CCEdge(items[i]);
         }
     };
-
+    // STR to construct the CC
     void set_pos_edge(const char items[][MAX_LEN], int num) {
         pos_edges.resize(num);
         for (int i = 0; i < num; ++i) {
@@ -695,8 +705,7 @@ public:
         return true;
     }
 
-    bool insert(uint64_t item, int class_id)
-    {
+    bool insert(uint64_t item, int class_id){
         if (class_id == 0) {
             // if insert an pos edge
             CCEdge * e = new CCEdge(item);
@@ -777,8 +786,7 @@ public:
         return c1 == c2;
     }
 
-    int query(const char * item)
-    {
+    int query(const char * item){
         CCEdge e;
         e.set_hash_val(item);
 
@@ -789,16 +797,16 @@ public:
         return c1 == c2;
     }
 
-    bool exp_build(uint64_t * keys, int num)
-    {
+    // 直接构造keys，values是一半一半
+    bool exp_build(uint64_t * keys, int num){
         set_pos_edge(keys, num / 2);
         set_neg_edge(keys + num / 2, num - (num / 2));
 
         return build();
     }
 
-    void init()
-    {
+    // 初始化，设置v_buckets的color
+    void init(){
         for (int i = 0; i < bucket_num; ++i) {
             v_buckets[i].color = 0;
         }

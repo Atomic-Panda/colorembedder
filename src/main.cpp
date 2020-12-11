@@ -7,7 +7,7 @@
 #include "multi_bloom_filter.h"
 #include "shifting_bloom_filter.h"
 
-#define MAXN 100000
+#define MAXN 10
 
 void test_two_set()
 {

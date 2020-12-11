@@ -53,8 +53,9 @@ public:
                 }
             }
         }
-
-        return ColoringClassifier<bucket_num, color_num>::build();
+        bool flag = ColoringClassifier<bucket_num, color_num>::build();
+        Parent::report();
+        return flag;
     }
 
     uint32_t query(uint64_t key)
