@@ -7,7 +7,12 @@
 #include "multi_bloom_filter.h"
 #include "shifting_bloom_filter.h"
 
-#define MAXN 10
+#define MAXN 100000
+
+int total_collision_times = 0;
+int total_failure_times = 0;
+int total_error_cnt = 0;
+int N = 10;
 
 void test_two_set()
 {
@@ -37,22 +42,37 @@ void test_two_set()
 
     bool build_result = cc->build(data, MAXN);
     cout << "Build 4-color classifier for " << MAXN << " items" << endl;
-    cout << "Using " << int(MAXN * 1.11) << " buckets" << endl;
-    cout << "Build result: " << (build_result ? "success": "failed") << endl;
+    cout << "\tUsing " << int(MAXN * 1.11) << " buckets" << endl;
+    cout << "\tBuild result: " << (build_result ? "success": "failed") << endl;
 
+    int err_cnt = 0;
     if (build_result) {
-        int err_cnt = 0;
         for (int i = 0; i < MAXN; ++i) {
             uint32_t result = cc->query(data[i].first);
             err_cnt += (result != data[i].second);
         }
-        cout << "Error count: " << err_cnt << endl;
+        cout << "\tError count: " << err_cnt << endl;
     }
+    cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n";
+    total_failure_times += !build_result;
+    total_error_cnt += err_cnt;
+    total_collision_times += cc->collision_time;
+
+    delete cc;
+    cc = NULL;
+    data.clear();
+    filter.clear();
 }
 
 int main()
 {
-    test_two_set();
-
+    for(int i = 0; i < N; i++){
+        cout << "Iteration " << i <<endl;
+        test_two_set();
+    }
+    cout << "\n\n";
+    cout << "Average error count is " << total_error_cnt/N <<endl;
+    cout << "Average collison times is " << total_collision_times / N << endl;
+    cout << "Failure time is " << total_failure_times <<"out of "<< N <<"iterations." << endl;
     return 0;
 }

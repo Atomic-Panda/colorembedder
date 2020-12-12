@@ -15,11 +15,13 @@
 #include <queue>
 #include <ctime>
 
+#define MAX_EDGE_COLLISION_TIME 100
+
 using namespace std;
 
 BOBHash * hash1, * hash2;
 
-template<int32_t bucket_num, int32_t COLOR_NUM = 4, bool verbose = 1>
+template<int32_t bucket_num, int32_t COLOR_NUM = 4, bool verbose = 0>
 class ColoringClassifier
 {
     // buckets是unit8，如果是4个颜色的话，2 bit就行了
@@ -36,7 +38,7 @@ private:
         bool available;
         char e_str[MAX_LEN];
 
-        // 设置Hash的值，val_a and val_b
+        // 设置Hash的值，val_a and val_b，即两个bucket
         void set_hash_val(uint64_t _e) {
             e = _e;
             // 这边的4是指size，可是为什么是4呢？可能需要研究一下BOB_Hash
@@ -85,7 +87,7 @@ private:
             hash_val_b = edge.hash_val_b;
         }
 
-        // 什么意思？
+        // query the other node of this edge
         uint32_t get_other_val(uint32_t i) const {
             if (i == hash_val_a) {
                 return hash_val_b;
@@ -102,17 +104,18 @@ public:
     int edge_collision_num;
     int affected_node_num;
     int BUCKET_NUM = bucket_num;
+    int collision_time;
     string name;
 
 protected:
     typedef Edge<bucket_num> CCEdge;
+    // 正边和负边分开记录，构造时会用到
     vector<CCEdge *> pos_edges, neg_edges;
 private:
     struct VerboseBuckets;
 
-    // node struct
-    struct VerboseGroup
-    {
+    // group(nodes with same color) struct
+    struct VerboseGroup{
         int color;
         unordered_set<VerboseGroup *> neighbours;
 //        unordered_set<VerboseGroup *> removed_neighbours;
@@ -127,8 +130,7 @@ private:
     };
 
     // 和buckets一一对应，verbose的冗长版本；node struct, link to pos, neg edges, root_bucket, next_bucket and last_son
-    struct VerboseBuckets
-    {
+    struct VerboseBuckets{
         int color;
         vector<CCEdge *> pos_edges, neg_edges;
         VerboseBuckets * root_bucket;
@@ -174,8 +176,8 @@ private:
     } v_buckets[bucket_num];
     // v_buckets就是node节点，这里有bucket_num个
 
-    void synchronize_all()
-    {
+    // 这两个sync函数是为了实现2bit的空间占用，把四个v_bucket放到一个uint8_t的bucket里面，不重要
+    void synchronize_all(){
         memset(buckets, 0, sizeof(buckets));
         for (int i = 0; i < bucket_num; ++i) {
             if (COLOR_NUM == 3) {
@@ -193,8 +195,7 @@ private:
         }
     }
 
-    void synchronize(int i)
-    {
+    void synchronize(int i){
         if (COLOR_NUM == 3) {
             int bucket_id = i / 5;
             int pos = i % 5;
@@ -215,7 +216,9 @@ private:
 protected:
     inline int get_bucket_val(int idx)
     {
+        // return v_buckets directly
         return v_buckets[idx].color;
+        /* 
         if (COLOR_NUM == 3) {
             int bucket_id = idx / 5;
             const int val_table[] = {
@@ -227,7 +230,7 @@ protected:
             return (buckets[bucket_id] >> ((idx % 4) * 2)) & 0x3;
         } else {
             return buckets[idx];
-        }
+        }*/
     }
 
 private:
@@ -259,7 +262,7 @@ private:
         }
     };
 
-    // try color groups using brute force method
+    // try color groups using brute force method (enum)
     static bool try_color_groups_bf(vector<VerboseGroup *> & groups)
     {
         int now = 0;
@@ -295,12 +298,14 @@ private:
         int tot_deleted = 0;
 
         if (verbose) {
-            printf("start color group.\n");
+            printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+            "start coloring group...\n"
+            "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
         }
 
         // try a more aggressive way to color
         VerboseGroup ** rotate_queue = new VerboseGroup*[2 * groups.size() + 1];
-        for (int i = 0; i < groups.size(); ++i) {
+        for (int i = 0; i < (int)groups.size(); ++i) {
             rotate_queue[i] = groups[i];
             rotate_queue[i]->visited = false;
             rotate_queue[i]->remained_neighbour_num = int(rotate_queue[i]->neighbours.size());
@@ -328,7 +333,7 @@ private:
         }
         delete rotate_queue;
 
-        if (tot_deleted != groups.size()) {
+        if (tot_deleted != (int)groups.size()) {
             return false;
         }
 
@@ -378,6 +383,7 @@ COLOR_FAILED:
             if (dict.find(p->get_root_bucket()) == dict.end()) {
                 auto vgp = dict[p->get_root_bucket()] = new VerboseGroup();
                 groups.push_back(vgp);
+                // group is linked to its root bucket, which is also the key of dict
                 vgp->back_pointer = p->get_root_bucket();
             }
         }
@@ -386,8 +392,10 @@ COLOR_FAILED:
             VerboseBuckets * p = &v_buckets[i];
             for (CCEdge * e: p->pos_edges) {
                 if (!e->available) continue;
+                // the other node
                 uint32_t other = e->get_other_val(uint32_t(i));
                 auto vgp = dict[p->get_root_bucket()];
+                // 这两个group之间有边，表示颜色应该不一致
                 vgp->neighbours.insert(dict[v_buckets[other].get_root_bucket()]);
             }
         }
@@ -401,8 +409,8 @@ COLOR_FAILED:
             for (auto itr: counter) {
                 max_val = max(itr.second, max_val);
             }
-            cout << "max: " << max_val << "/" <<  bucket_num << endl;
-            cout << groups.size() << endl;
+            cout << "max size of a group / bucket num : " << max_val << "/" <<  bucket_num << endl;
+            cout << "The size of group is "<< groups.size() << endl;
         }
 
         bool result = try_color_groups(groups);
@@ -631,10 +639,32 @@ public:
 
     void random_set_hash(){
         srand(time(0));
-        if (hash1) delete hash1;
-        if (hash2) delete hash2;
+        if (hash1) {
+            delete hash1;
+            hash1 = NULL;
+        }
+        if (hash2) {
+            delete hash2;
+            hash2 = NULL;
+        }
         hash1 = new BOBHash(rand());
         hash2 = new BOBHash(rand());
+    }
+    
+    void random_set_hash(uint32_t offset){
+        srand(time(0) + 1000 * offset);
+        if (hash1) {
+            delete hash1;
+            hash1 = NULL;
+        }
+        if (hash2) {
+            delete hash2;
+            hash2 = NULL;
+        }
+        hash1 = new BOBHash(rand());
+        // cout << hash1 -> seed << endl;
+        hash2 = new BOBHash(rand());
+        // cout << hash2 -> seed << endl;
     }
     // INT to construct the CC
     void set_pos_edge(uint64_t * items, int num) {
@@ -667,36 +697,87 @@ public:
 
     bool build() {
         // use neg unordered_set build group
-        if (verbose) fprintf(stderr, "set neg edge.\n");
-        for (auto & edge: neg_edges) {
-            CCEdge * e = edge;
-            auto bucket_a = &v_buckets[e->hash_val_a];
-            auto bucket_b = &v_buckets[e->hash_val_b];
+        collision_time = 0;
+        while(collision_time < MAX_EDGE_COLLISION_TIME){
+            if(verbose){
+                printf("Build for the %d time...\n", collision_time+1);
+            }
+            // 初始化edge_colision_num
+            edge_collision_num = 0;
+            if(collision_time != 0){
+                // initialize what has been changed
+                for (int i = 0; i < BUCKET_NUM; i++){
+                    auto cur_bucket = &v_buckets[i];
+                    cur_bucket->pos_edges.clear();
+                    cur_bucket->neg_edges.clear();
 
-            bucket_a->neg_edges.push_back(e);
-            bucket_b->neg_edges.push_back(e);
+                    cur_bucket->root_bucket = cur_bucket;
+                    cur_bucket->next_bucket = NULL;
+                    cur_bucket->last_son = cur_bucket; // only useful when root
 
-            if (bucket_a->get_root_bucket() != bucket_b->get_root_bucket()) {
-                bucket_b->set_root_bucket(bucket_a->get_root_bucket());
+                    cur_bucket->group.back_pointer = cur_bucket;
+                }
+                // reset hash
+                random_set_hash(collision_time);
+                // printf("rehash for neg_edge...\n");
+                for (auto & edge: neg_edges){
+                    CCEdge * e = edge;
+                    e->available = true;
+                    // cout << e->hash_val_a <<" "<< e->hash_val_b << endl;
+                    e->set_hash_val(e->e);
+                    // cout << e->hash_val_a <<" "<< e->hash_val_b << endl;
+                }
+                // printf("rehash for pos_edge...\n");
+                for (auto & edge: pos_edges){
+                    CCEdge * e = edge;
+                    e->available = true;
+                    // cout << e->hash_val_a <<" "<< e->hash_val_b << endl;
+                    e->set_hash_val(e->e);
+                    // cout << e->hash_val_a <<" "<< e->hash_val_b << endl;
+                }
+            }
+            
+            if (verbose) fprintf(stderr, "set neg edge.\n");
+            for (auto & edge: neg_edges) {
+                CCEdge * e = edge;
+                auto bucket_a = &v_buckets[e->hash_val_a];
+                auto bucket_b = &v_buckets[e->hash_val_b];
+
+                bucket_a->neg_edges.push_back(e);
+                bucket_b->neg_edges.push_back(e);
+
+                if (bucket_a->get_root_bucket() != bucket_b->get_root_bucket()) {
+                    bucket_b->set_root_bucket(bucket_a->get_root_bucket());
+                }
+            }
+
+            // check pos unordered_set available
+            if (verbose) fprintf(stderr, "set pos edge.\n");
+            for (auto & edge: pos_edges) {
+                CCEdge * e = edge;
+                auto bucket_a = &v_buckets[e->hash_val_a];
+                auto bucket_b = &v_buckets[e->hash_val_b];
+
+                bucket_a->pos_edges.push_back(e);
+                bucket_b->pos_edges.push_back(e);
+
+                if (bucket_a->get_root_bucket() == bucket_b->get_root_bucket()) {
+                    edge_collision_num += 1;
+                    e->available = false;
+                }
+            }
+            // at the begining of the while loop, initial what has been changed
+            if(edge_collision_num != 0){
+                collision_time ++;
+                continue;
+            }
+            if(edge_collision_num == 0){
+                break;
             }
         }
-
-        // check pos unordered_set available
-        if (verbose) fprintf(stderr, "set pos edge.\n");
-        for (auto & edge: pos_edges) {
-            CCEdge * e = edge;
-            auto bucket_a = &v_buckets[e->hash_val_a];
-            auto bucket_b = &v_buckets[e->hash_val_b];
-
-            bucket_a->pos_edges.push_back(e);
-            bucket_b->pos_edges.push_back(e);
-
-            if (bucket_a->get_root_bucket() == bucket_b->get_root_bucket()) {
-                edge_collision_num += 1;
-                e->available = false;
-            }
-        }
-
+        
+        // If there's still edge collision after MAX_EDGE_COLLISION_TIME,
+        // we ignore the collision and endure some error.
         bool color_result = try_color_all();
         if (!color_result) {
             return false;
@@ -815,13 +896,23 @@ public:
 
     void report()
     {
-        for (int i = 0; i < bucket_num; ++i) {
-            cout << i << ": " << v_buckets[i].color << " ";
-            for (CCEdge * e: v_buckets[i].pos_edges) {
-                cout << "(" << e->hash_val_a << "," << e->hash_val_b << ") ";
-            }
-            cout << endl;
-        }
+        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n"
+            "report coloring result...\n");
+        printf("the summary of color embedder:\n"
+        "\tthe edge collision num is %d\n"
+        "\tthe edge collision time is %d\n"
+        "\tthe neg item num is %d\n"
+        "\tthe pos item num is %d\n"
+        "report summary done.\n", edge_collision_num, collision_time, (int)neg_edges.size(), (int)pos_edges.size());
+        // for (int i = 0; i < bucket_num; ++i) {
+        //     if(i%(bucket_num/10)) continue;
+        //     cout << i << ": " << v_buckets[i].color << " ";
+        //     for (CCEdge * e: v_buckets[i].pos_edges) {
+        //         cout << "(" << e->hash_val_a << "," << e->hash_val_b << ") ";
+        //     }
+        //     cout << endl;
+        // }
+        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     }
 
     ~ColoringClassifier() {

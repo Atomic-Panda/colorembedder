@@ -135,6 +135,7 @@ uint32_t BOB_str(const void * buf, size_t len)
 
 class BOBHash
 {
+public:
     uint32_t seed;
 public:
     BOBHash(uint32_t _seed): seed(_seed)

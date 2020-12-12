@@ -7,8 +7,9 @@
 
 using namespace std;
 
+// 这里我把shift_cc改成public了
 template<uint32_t bucket_num, uint32_t color_num, uint32_t class_num>
-class ShiftingColoringClassifier: protected ColoringClassifier<bucket_num, color_num>
+class ShiftingColoringClassifier: public ColoringClassifier<bucket_num, color_num>
 {
     typedef ColoringClassifier<bucket_num, color_num> Parent;
     static constexpr int max_offset = log2(class_num);
