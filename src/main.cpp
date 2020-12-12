@@ -7,12 +7,13 @@
 #include "multi_bloom_filter.h"
 #include "shifting_bloom_filter.h"
 
-#define MAXN 100000
+#define MAXN 10000
 
 int total_collision_times = 0;
 int total_failure_times = 0;
 int total_error_cnt = 0;
-int N = 10;
+int collision_iteration = 0;
+
 
 void test_two_set()
 {
@@ -57,6 +58,7 @@ void test_two_set()
     total_failure_times += !build_result;
     total_error_cnt += err_cnt;
     total_collision_times += cc->collision_time;
+    if(cc->collision_time != 0) collision_iteration ++;
 
     delete cc;
     cc = NULL;
@@ -66,13 +68,15 @@ void test_two_set()
 
 int main()
 {
+    int N = 100;
     for(int i = 0; i < N; i++){
         cout << "Iteration " << i <<endl;
         test_two_set();
     }
     cout << "\n\n";
     cout << "Average error count is " << total_error_cnt/N <<endl;
+    cout << "Total iteration with edge collision is " << collision_iteration << endl;
     cout << "Average collison times is " << total_collision_times / N << endl;
-    cout << "Failure time is " << total_failure_times <<"out of "<< N <<"iterations." << endl;
+    cout << "Failure time is " << total_failure_times <<" out of "<< N <<"iterations." << endl;
     return 0;
 }
