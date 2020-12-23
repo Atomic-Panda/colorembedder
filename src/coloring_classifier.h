@@ -15,7 +15,7 @@
 #include <queue>
 #include <ctime>
 
-#define MAX_EDGE_COLLISION_TIME 100
+#define MAX_EDGE_COLLISION_TIME 1
 
 using namespace std;
 
@@ -103,6 +103,7 @@ private:
 public:
     int edge_collision_num;
     int affected_node_num;
+    int node_num_to_update;
     int BUCKET_NUM = bucket_num;
     int collision_time;
     string name;
@@ -111,6 +112,26 @@ protected:
     typedef Edge<bucket_num> CCEdge;
     // 正边和负边分开记录，构造时会用到
     vector<CCEdge *> pos_edges, neg_edges;
+public:
+    struct overflowtable{
+        unordered_map<uint64_t, uint32_t> ErrorTable;
+
+        int size(){
+            return ErrorTable.size();
+        }
+
+        int query(uint64_t e){
+            if(ErrorTable.find(e)==ErrorTable.end()){
+                return -1;
+            }
+            return ErrorTable[e];
+        }
+        
+        void insert(uint64_t e, uint32_t classid){
+            ErrorTable.insert(make_pair(e, classid));
+        }
+    }OverFlowTable;
+
 private:
     struct VerboseBuckets;
 
@@ -118,7 +139,7 @@ private:
     struct VerboseGroup{
         int color;
         unordered_set<VerboseGroup *> neighbours;
-//        unordered_set<VerboseGroup *> removed_neighbours;
+        // unordered_set<VerboseGroup *> removed_neighbours;
         bool deleted;
         bool visited;
         bool used;
@@ -131,6 +152,7 @@ private:
 
     // 和buckets一一对应，verbose的冗长版本；node struct, link to pos, neg edges, root_bucket, next_bucket and last_son
     struct VerboseBuckets{
+        int bucket_id;
         int color;
         vector<CCEdge *> pos_edges, neg_edges;
         VerboseBuckets * root_bucket;
@@ -149,6 +171,7 @@ private:
             neg_edges.clear();
 
             group.back_pointer = this;
+            bucket_id = -1;
         }
 
         // GetRoot？并查集？
@@ -174,9 +197,11 @@ private:
             new_root->last_son = old_root->last_son;
         }
     } v_buckets[bucket_num];
+    // duplication of v_buckets used to insert
+    VerboseBuckets old_buckets[bucket_num];
     // v_buckets就是node节点，这里有bucket_num个
 
-    // 这两个sync函数是为了实现2bit的空间占用，把四个v_bucket放到一个uint8_t的bucket里面，不重要
+    // 这两个sync函数是为了实现2bit的空间占用，把四个v_bucket放到一个uint8_t的bucket里面
     void synchronize_all(){
         memset(buckets, 0, sizeof(buckets));
         for (int i = 0; i < bucket_num; ++i) {
@@ -232,7 +257,45 @@ protected:
             return buckets[idx];
         }*/
     }
-
+public:
+    struct updatecc{
+        int tot_num;
+        vector<int> affected_id;
+        int st, ed;
+        updatecc(){
+            affected_id.clear();
+            tot_num = 0;
+            st = ed = -1;
+        }
+        void insert(int i){
+            tot_num ++;
+            affected_id.push_back(i);
+            if(i < st || st == -1){
+                st = i;
+            }
+            if(i > ed || st == -1){
+                ed = i;
+            }
+        }
+        void dis(){
+            cout << "Updated: " << tot_num <<" ";
+            cout << st <<" " << ed <<": ";
+            for(auto it = affected_id.begin(); it != affected_id.end(); it++){
+                cout << *it <<" ";
+            }
+            cout << endl;
+        }
+        void update(ColoringClassifier* cc){
+            for(auto it = affected_id.begin(); it != affected_id.end(); it++){
+                cc->synchronize(*it);
+            }
+        }
+        void clear(){
+            tot_num = 0;
+            st = ed = -1;
+            affected_id.clear();
+        }
+    }UpdateCC;
 private:
     static int get_next_color(VerboseGroup * g)
     {
@@ -263,9 +326,15 @@ private:
     };
 
     // try color groups using brute force method (enum)
+    // if failed, we need to restore the color
     static bool try_color_groups_bf(vector<VerboseGroup *> & groups)
     {
-        int now = 0;
+        unsigned int now = 0;
+        int old_color[bucket_num] = {};
+        for(long long unsigned int i = 0; i < groups.size(); i++){
+            old_color[i] = groups[i]->color;
+        }
+
         while (now >= 0 && now < groups.size()) {
             VerboseGroup * g = groups[now];
             int color = get_next_color(g);
@@ -274,7 +343,6 @@ private:
                 now--;
                 continue;
             }
-
             g->color = color;
             now++;
         }
@@ -284,6 +352,12 @@ private:
         if (result) {
             for (auto g: groups) {
                 color_group(g->back_pointer, g->color);
+            }
+        }
+        // if failed, restore the color to the old one
+        else{
+            for(long long unsigned int i = 0; i < groups.size(); i++){
+                groups[i]->color = old_color[i];
             }
         }
 
@@ -323,9 +397,11 @@ private:
                     if (n->visited && n->remained_neighbour_num == COLOR_NUM - 1)
                     {
                         rotate_queue[end++] = n;
+
                     }
                 }
-            } else {
+            } 
+            else {
                 g->visited = true;
             }
             start %= (groups.size() + 1);
@@ -355,7 +431,7 @@ COLOR_FAILED:
             }
 
             sorted[i]->color = c;
-
+            sorted[i]->back_pointer->get_root_bucket()->group.color = c;
             if (c == -1) {
                 printf("impossible\n");
                 return false;
@@ -365,7 +441,6 @@ COLOR_FAILED:
         for (VerboseGroup * g: sorted) {
             color_group(g->back_pointer, g->color);
         }
-
         return true;
     }
 
@@ -385,11 +460,14 @@ COLOR_FAILED:
                 groups.push_back(vgp);
                 // group is linked to its root bucket, which is also the key of dict
                 vgp->back_pointer = p->get_root_bucket();
+                // create link between root_bucket and its group
+                p->get_root_bucket()->group.back_pointer = p->get_root_bucket();
             }
         }
 
         for (int i = 0; i < bucket_num; ++i) {
             VerboseBuckets * p = &v_buckets[i];
+            // Go through all pos_edges linked to the bucket
             for (CCEdge * e: p->pos_edges) {
                 if (!e->available) continue;
                 // the other node
@@ -397,10 +475,12 @@ COLOR_FAILED:
                 auto vgp = dict[p->get_root_bucket()];
                 // 这两个group之间有边，表示颜色应该不一致
                 vgp->neighbours.insert(dict[v_buckets[other].get_root_bucket()]);
+                // insert neighbours to group
+                p->get_root_bucket()->group.neighbours.insert(&(v_buckets[other].get_root_bucket()->group));
             }
         }
 
-        if (verbose) {
+        if (1) {
             unordered_map<void *, int> counter;
             for (int i = 0; i < bucket_num; ++i) {
                 counter[v_buckets[i].get_root_bucket()]++;
@@ -411,6 +491,10 @@ COLOR_FAILED:
             }
             cout << "max size of a group / bucket num : " << max_val << "/" <<  bucket_num << endl;
             cout << "The size of group is "<< groups.size() << endl;
+            // my code here
+            // for(int i = 0; i< BUCKET_NUM; i++){
+            //     cout << v_buckets[i].bucket_id << " "<<v_buckets[i].get_root_bucket()->bucket_id <<" "<<v_buckets[i].group.neighbours.size()<<endl;
+            // }
         }
 
         bool result = try_color_groups(groups);
@@ -433,7 +517,7 @@ COLOR_FAILED:
 
     struct IncrementalTryColor
     {
-        int tot_num;
+        unsigned int tot_num;
         vector<VerboseGroup *> groups;
         vector<VerboseGroup *> sorted;
 //        set<VerboseGroup *> remained_set;
@@ -464,7 +548,8 @@ COLOR_FAILED:
                         if (n->visited && n->neighbours.size() - n->deleted_neighbour_num == COLOR_NUM - 1)
                             rotate_queue.push(n);
                     }
-                } else {
+                } 
+                else {
                     g->visited = true;
                 }
                 rotate_queue.pop();
@@ -482,16 +567,20 @@ COLOR_FAILED:
                     if (!try_color_groups_bf(remained)) {
                         return false;
                     }
-                } else {
+                } 
+                else {
                     return false;
                 }
             }
 
+            // if success, recolor
+            // if failed, the color will not be affected
             color_sorted();
 
             return true;
         }
 
+        // if run success, it will call color_sorted to recolor
         void color_sorted()
         {
             for (int i = sorted.size() - 1; i >= 0; --i) {
@@ -540,14 +629,15 @@ COLOR_FAILED:
             vpg->used = true;
         }
 
-        bool success;
+        bool success = false;
         int turn = 0;
 
         while (1) {
             turn += 1;
-
+            
+            // go throuth the whole graph
             if (nbs.size() == 0) {
-                cout << turn << " " << itc.tot_num << " " << itc.sorted.size() << endl;
+                // cout << turn << " " << itc.tot_num << " " << itc.sorted.size() << endl;
                 success = false;
                 break;
             }
@@ -587,18 +677,6 @@ COLOR_FAILED:
             }
         }
 
-        // clear
-        for (VerboseGroup * g: itc.groups) {
-            g->deleted = false;
-            g->used = false;
-            g->visited = false;
-            g->deleted_neighbour_num = 0;
-            for (auto p = (g->back_pointer); p; p = p->next_bucket) {
-                synchronize(p - v_buckets);
-                affected_node_num += 1;
-            }
-        }
-
         for (auto g: nbs) {
             g->deleted = false;
             g->used = false;
@@ -606,9 +684,33 @@ COLOR_FAILED:
             g->deleted_neighbour_num = 0;
         }
 
+        // clear
+        node_num_to_update = 0;
+        UpdateCC.clear();
+        for (VerboseGroup * g: itc.groups) {
+            g->deleted = false;
+            g->used = false;
+            g->visited = false;
+            g->deleted_neighbour_num = 0;
+            for (auto p = (g->back_pointer); p; p = p->next_bucket) {
+                // synchronize(p - v_buckets);
+                UpdateCC.insert(p->bucket_id);
+                affected_node_num += 1;
+                node_num_to_update += 1;
+            }
+        }
+        
+        // failed
+        if(!success){
+            return success;
+        }
+        
+        // UpdateCC.dis();
+        UpdateCC.update(this);
         return success;
     }
 
+    // a pos edge linked these two groups means that we cannot insert a negedge between a and b
     bool check_two_group_have_collision_edge(VerboseBuckets * a, VerboseBuckets * b)
     {
         for (; b != NULL; b = b->next_bucket) {
@@ -629,11 +731,17 @@ public:
         edge_collision_num = 0;
         affected_node_num = 0;
         memset(buckets, 0, sizeof(buckets));
-
+        delete hash1;
+        delete hash2;
+        hash1 = NULL;
+        hash2 = NULL;
         if (!hash1) {
             srand(time(0));
             hash1 = new BOBHash(rand());
             hash2 = new BOBHash(rand());
+        }
+        for(int i = 0; i < BUCKET_NUM; i++){
+            v_buckets[i].bucket_id = i;
         }
     };
 
@@ -737,6 +845,7 @@ public:
                 }
             }
             
+            // two bucket linked with negedge will be set same color 
             if (verbose) fprintf(stderr, "set neg edge.\n");
             for (auto & edge: neg_edges) {
                 CCEdge * e = edge;
@@ -761,9 +870,12 @@ public:
                 bucket_a->pos_edges.push_back(e);
                 bucket_b->pos_edges.push_back(e);
 
+                // edge collision means that there is certainly an error at last
                 if (bucket_a->get_root_bucket() == bucket_b->get_root_bucket()) {
                     edge_collision_num += 1;
                     e->available = false;
+                    // 1 for posedge
+                    OverFlowTable.insert(e->e, 1);
                 }
             }
             // at the begining of the while loop, initial what has been changed
@@ -776,7 +888,7 @@ public:
             }
         }
         
-        // If there's still edge collision after MAX_EDGE_COLLISION_TIME,
+        // If there's still edge_collision after MAX_EDGE_COLLISION_TIME,
         // we ignore the collision and endure some error.
         bool color_result = try_color_all();
         if (!color_result) {
@@ -787,8 +899,16 @@ public:
         return true;
     }
 
+// #define insertDubug
     bool insert(uint64_t item, int class_id){
-        if (class_id == 0) {
+        for(int i = 0; i < BUCKET_NUM; i++){
+            old_buckets[i] = v_buckets[i];
+            old_buckets[i].root_bucket = &old_buckets[v_buckets[i].root_bucket-v_buckets];
+            old_buckets[i].next_bucket = &old_buckets[v_buckets[i].next_bucket-v_buckets];
+            old_buckets[i].last_son = &old_buckets[v_buckets[i].last_son-v_buckets];   
+            old_buckets[i].group.back_pointer = &old_buckets[v_buckets[i].group.back_pointer-v_buckets];
+        }
+        if (class_id == 1) {
             // if insert an pos edge
             CCEdge * e = new CCEdge(item);
             pos_edges.push_back(e);
@@ -802,22 +922,54 @@ public:
             auto root_a = bucket_a->get_root_bucket();
             auto root_b = bucket_b->get_root_bucket();
 
+            // edge collision and error
             if (root_a == root_b) {
-                // edge collisions occur
                 e->available = false;
                 edge_collision_num += 1;
+                OverFlowTable.insert(item, class_id);
+                #ifdef insertDebug
+                cout << "Pos edge with edge collision has been inserted into oftable." <<endl;
+                #endif
                 return true;
             }
 
             root_a->group.neighbours.insert(&(root_b->group));
             root_b->group.neighbours.insert(&(root_a->group));
 
+            // if the colors of the two buckets is diffrent, we don't need to do anything
             if (bucket_a->color != bucket_b->color) {
+                #ifdef insertDebug
+                cout << "Do nothing." << endl;
+                #endif
                 return true;
             }
+            
+            // if the color of the two buckets is the same, we try recolor the graph
+            #ifdef insertDebug
+            cout <<"Pos Edge Recolor." <<endl;
+            #endif
+            
+            bool flag = try_color_two_bucket(bucket_a, bucket_b);
+            if(flag){
+                return flag;
+            }
+            // failed
+            else{
+                cout << "Pos edge recolor failed." <<endl;
+                e->available = false;
+                edge_collision_num += 1;
+                OverFlowTable.insert(item, class_id);
+                
+                root_a->group.neighbours.erase(&(root_b->group));
+                root_b->group.neighbours.erase(&(root_a->group));
 
-            return try_color_two_bucket(bucket_a, bucket_b);
-        } else {
+                return flag;
+            }
+        } 
+        else {
+            vector<VerboseGroup *> record;
+            record.clear();
+
             neg_edges.push_back(new CCEdge(item));
             CCEdge * e = neg_edges.back();
 
@@ -827,20 +979,31 @@ public:
             bucket_a->neg_edges.push_back(e);
             bucket_b->neg_edges.push_back(e);
 
+            // in the same group, we don't do anything
             if (bucket_a->get_root_bucket() == bucket_b->get_root_bucket()) {
+                #ifdef insertDebug
+                cout << "Do nothing." << endl;
+                #endif
                 return true;
             }
 
             // check whether there is a pos edge in these two group
+            // edge collision and error
             if (check_two_group_have_collision_edge(bucket_a->get_root_bucket(), bucket_b->get_root_bucket())) {
                 e->available = false;
                 edge_collision_num += 1;
+                OverFlowTable.insert(item, class_id);
+                #ifdef insertDebug
+                cout <<"neg edge with edge collision has been inserted into oftable." <<endl;
+                #endif
+                
                 return true;
             }
 
             auto root_a = bucket_a->get_root_bucket();
             auto root_b = bucket_b->get_root_bucket();
             for (VerboseGroup * n: root_b->group.neighbours) {
+                record.push_back(n);
                 n->neighbours.erase(&(root_b->group));
                 n->neighbours.insert(&(root_a->group));
                 root_a->group.neighbours.insert(n);
@@ -850,10 +1013,39 @@ public:
             bucket_b->set_root_bucket(bucket_a->get_root_bucket());
 
             if (bucket_a->color == bucket_b->color) {
+                #ifdef insertDebug
+                cout <<"Do nothing." <<endl;
+                #endif
                 return true;
             }
-
-            return try_color_two_bucket(bucket_a);
+            #ifdef insertDebug
+            cout << "Neg Edge Recolor" << endl;
+            #endif
+            bool flag = try_color_two_bucket(bucket_a);
+            if(flag){
+                return flag;
+            }
+            else{
+                cout << "Neg edge recolor failed." <<endl;
+                e->available = false;
+                edge_collision_num += 1;
+                OverFlowTable.insert(item, class_id);
+                
+                for(auto n: record){
+                    n->neighbours.erase(&(root_a->group));
+                    n->neighbours.insert(&(root_b->group));
+                    root_a->group.neighbours.erase(n);
+                }
+                
+                for(int i = 0; i < BUCKET_NUM; i++){
+                    v_buckets[i] = old_buckets[i];
+                    v_buckets[i].root_bucket = &v_buckets[old_buckets[i].root_bucket-old_buckets];
+                    v_buckets[i].next_bucket = &v_buckets[old_buckets[i].next_bucket-old_buckets];
+                    v_buckets[i].last_son = &v_buckets[old_buckets[i].last_son-old_buckets];   
+                    v_buckets[i].group.back_pointer = &v_buckets[old_buckets[i].group.back_pointer-old_buckets];
+                }
+                return flag;
+            }
         }
     }
 
@@ -900,10 +1092,15 @@ public:
             "report coloring result...\n");
         printf("the summary of color embedder:\n"
         "\tthe edge collision num is %d\n"
-        "\tthe edge collision time is %d\n"
+        // "\tthe edge collision time is %d\n"
         "\tthe neg item num is %d\n"
         "\tthe pos item num is %d\n"
-        "report summary done.\n", edge_collision_num, collision_time, (int)neg_edges.size(), (int)pos_edges.size());
+        "\tThe size of overflow table is %d\n"
+        "\treport summary done.\n", edge_collision_num, 
+        // collision_time, 
+        (int)neg_edges.size(), (int)pos_edges.size(), OverFlowTable.size());        
+        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
+                
         // for (int i = 0; i < bucket_num; ++i) {
         //     if(i%(bucket_num/10)) continue;
         //     cout << i << ": " << v_buckets[i].color << " ";
@@ -912,7 +1109,6 @@ public:
         //     }
         //     cout << endl;
         // }
-        printf("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n");
     }
 
     ~ColoringClassifier() {

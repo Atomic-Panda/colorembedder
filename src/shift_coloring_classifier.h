@@ -7,7 +7,7 @@
 
 using namespace std;
 
-// 这里我把shift_cc改成public了
+// 这里我把shift_cc改成public继承了
 template<uint32_t bucket_num, uint32_t color_num, uint32_t class_num>
 class ShiftingColoringClassifier: public ColoringClassifier<bucket_num, color_num>
 {
@@ -55,7 +55,6 @@ public:
             }
         }
         bool flag = ColoringClassifier<bucket_num, color_num>::build();
-        Parent::report();
         return flag;
     }
 
@@ -64,6 +63,12 @@ public:
         typename Parent::CCEdge e(key);
 
         uint32_t ret = 0;
+
+        // Check if the element exists in the OverFlowTable
+        int query = Parent::OverFlowTable.query(key);
+        if(query != -1){
+            return query;
+        }
 
         for (int k = 0; k < max_offset; ++k) {
             int c1 = Parent::get_bucket_val((e.hash_val_a + k) % bucket_num);

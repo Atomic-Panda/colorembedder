@@ -5,3 +5,4 @@ data/data*
 
 .idea/
 cmake-build-debug/
+.vscode/
