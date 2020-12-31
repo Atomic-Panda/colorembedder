@@ -193,6 +193,7 @@ private:
         {
             VerboseBuckets * old_root = get_root_bucket();
             old_root->root_bucket = new_root;
+            if(new_root->last_son->next_bucket != NULL) cout <<"!!!!!!!!!!!!!!!!!!!!!!"<<endl;
             new_root->last_son->next_bucket = old_root;
             new_root->last_son = old_root->last_son;
         }
@@ -901,13 +902,14 @@ public:
 
 // #define insertDubug
     bool insert(uint64_t item, int class_id){
-        for(int i = 0; i < BUCKET_NUM; i++){
-            old_buckets[i] = v_buckets[i];
-            old_buckets[i].root_bucket = &old_buckets[v_buckets[i].root_bucket-v_buckets];
-            old_buckets[i].next_bucket = &old_buckets[v_buckets[i].next_bucket-v_buckets];
-            old_buckets[i].last_son = &old_buckets[v_buckets[i].last_son-v_buckets];   
-            old_buckets[i].group.back_pointer = &old_buckets[v_buckets[i].group.back_pointer-v_buckets];
-        }
+        // for(int i = 0; i < BUCKET_NUM; i++){
+            // old_buckets[i] = v_buckets[i];
+            // old_buckets[i].root_bucket = &old_buckets[v_buckets[i].root_bucket-v_buckets];
+            // old_buckets[i].next_bucket = (v_buckets[i].next_bucket==NULL)?NULL:&old_buckets[v_buckets[i].next_bucket-v_buckets];
+            // old_buckets[i].last_son = &old_buckets[v_buckets[i].last_son-v_buckets];   
+            // old_buckets[i].group.back_pointer = &old_buckets[v_buckets[i].group.back_pointer-v_buckets];
+        // }
+        
         if (class_id == 1) {
             // if insert an pos edge
             CCEdge * e = new CCEdge(item);
@@ -967,9 +969,6 @@ public:
             }
         } 
         else {
-            vector<VerboseGroup *> record;
-            record.clear();
-
             neg_edges.push_back(new CCEdge(item));
             CCEdge * e = neg_edges.back();
 
@@ -1002,22 +1001,37 @@ public:
 
             auto root_a = bucket_a->get_root_bucket();
             auto root_b = bucket_b->get_root_bucket();
+            auto inteval = root_a->last_son;
+
+            if (bucket_a->color == bucket_b->color) {
+                for (VerboseGroup * n: root_b->group.neighbours) {
+                    n->neighbours.erase(&(root_b->group));
+                    n->neighbours.insert(&(root_a->group));
+                    root_a->group.neighbours.insert(n);
+                }
+                bucket_b->set_root_bucket(root_a);
+                #ifdef insertDebug
+                cout <<"Do nothing." <<endl;
+                #endif
+                return true;
+            }
+
+            // 复制旧的group
+            for(int i = 0; i < BUCKET_NUM; i++){
+                old_buckets[i].group = v_buckets[i].group;
+            }
+
+            // 把root_b所有的邻居从b上erase掉之后挂载root_a上
             for (VerboseGroup * n: root_b->group.neighbours) {
-                record.push_back(n);
                 n->neighbours.erase(&(root_b->group));
                 n->neighbours.insert(&(root_a->group));
                 root_a->group.neighbours.insert(n);
             }
 
             // reset all group pointer
-            bucket_b->set_root_bucket(bucket_a->get_root_bucket());
+            // 这里set root bucket会导致整个图都改变，但应该更精细化地恢复状态
+            bucket_b->set_root_bucket(root_a);
 
-            if (bucket_a->color == bucket_b->color) {
-                #ifdef insertDebug
-                cout <<"Do nothing." <<endl;
-                #endif
-                return true;
-            }
             #ifdef insertDebug
             cout << "Neg Edge Recolor" << endl;
             #endif
@@ -1031,18 +1045,41 @@ public:
                 edge_collision_num += 1;
                 OverFlowTable.insert(item, class_id);
                 
-                for(auto n: record){
-                    n->neighbours.erase(&(root_a->group));
-                    n->neighbours.insert(&(root_b->group));
-                    root_a->group.neighbours.erase(n);
+                int mode = 0;
+                root_b->last_son = root_a->last_son;
+                root_a->last_son = inteval;
+                for(auto it = root_a; it!=NULL; it = it->next_bucket){
+                    if(mode == 0){
+                        it->root_bucket = root_a;
+                    }
+                    else if(mode == 1){
+                        it->root_bucket = root_b;
+                    }
+                    if(it == inteval){
+                        mode = 1;
+                    }
                 }
-                
+                inteval->next_bucket = NULL;
+        
+                // for(int i = 0; i < BUCKET_NUM; i++){
+                    // int i = aff[j];
+                    // cout <<i<<": " <<endl;
+                    // cout << v_buckets[i].bucket_id <<" " <<((v_buckets[i].next_bucket!=NULL)?(v_buckets[i].next_bucket->bucket_id):-1)<<" "<<v_buckets[i].last_son->bucket_id <<" "<< endl;
+                    // cout << old_buckets[i].bucket_id <<" " <<((old_buckets[i].next_bucket!=NULL)?(old_buckets[i].next_bucket->bucket_id):-1) <<" "<<old_buckets[i].last_son->bucket_id<<" " << endl;
+                    // if(v_buckets[i].get_root_bucket()->bucket_id != old_buckets[i].get_root_bucket()->bucket_id) cout <<"Unequal!"<<endl;
+                // }
+                // for(int j = 0; j < aff.size(); j++){
+                    // cout << aff.size() << endl;
+                    // int i = aff[j];
+                    // v_buckets[i].group = old_buckets[i].group;
+                    // v_buckets[i].root_bucket = &v_buckets[old_buckets[i].root_bucket-old_buckets];
+                    // v_buckets[i].next_bucket = (old_buckets[i].next_bucket==NULL)?NULL:&v_buckets[old_buckets[i].next_bucket-old_buckets];
+                    // v_buckets[i].last_son = &v_buckets[old_buckets[i].last_son-old_buckets];
+                // }
+
+                // we only need to reset for group
                 for(int i = 0; i < BUCKET_NUM; i++){
-                    v_buckets[i] = old_buckets[i];
-                    v_buckets[i].root_bucket = &v_buckets[old_buckets[i].root_bucket-old_buckets];
-                    v_buckets[i].next_bucket = &v_buckets[old_buckets[i].next_bucket-old_buckets];
-                    v_buckets[i].last_son = &v_buckets[old_buckets[i].last_son-old_buckets];   
-                    v_buckets[i].group.back_pointer = &v_buckets[old_buckets[i].group.back_pointer-old_buckets];
+                    v_buckets[i].group = old_buckets[i].group;
                 }
                 return flag;
             }

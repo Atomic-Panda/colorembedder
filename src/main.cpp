@@ -103,14 +103,14 @@ void test_two_set()
             }
         }
     }
-    // err_cnt = 0;
-    // for (int i = 0; i < MAXN + insertN; ++i) {
-    //     uint32_t result = cc->query(data[i].first);
-    //     err_cnt += (result != data[i].second);
-    //     if(result != data[i].second){
-    //         cout << i << " ";
-    //     }
-    // }
+    err_cnt = 0;
+    for (int i = 0; i < MAXN + insertN; ++i) {
+        uint32_t result = cc->query(data[i].first);
+        err_cnt += (result != data[i].second);
+        // if(result != data[i].second){
+        //     cout << i << " ";
+        // }
+    }
     cout << endl;
     cout << "After insert " << insertN << " elements..." << endl;
     cc->report();
